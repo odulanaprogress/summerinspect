@@ -130,18 +130,32 @@ $emailBody = "
 </html>
 ";
 
-// Headers
-$headers = [];
-$headers[] = 'MIME-Version: 1.0';
-$headers[] = 'Content-type: text/html; charset=UTF-8';
-$headers[] = 'From: SILWA Web Enquiries <biz@summerinspectlog.com>';
-$headers[] = 'Reply-To: ' . $fullName . ' <' . $email . '>';
-$headers[] = 'Date: ' . date('r');
-$headers[] = 'Message-ID: <' . md5(uniqid(time())) . '@summerinspectlog.com>';
-$headers[] = 'X-Mailer: PHP/' . phpversion();
+// Send to company using WordPress engine if available, or direct PHP mail with Hostinger SPF
+$sent = false;
+$fromSender = 'wordpress@summerinspectlog.com';
 
-// Send to company with -f envelope sender (required by Hostinger)
-$sent = @mail($toEmail, $subject, $emailBody, implode("\r\n", $headers), "-f biz@summerinspectlog.com");
+if (file_exists(__DIR__ . '/wp-load.php')) {
+    // If WordPress is present on the server, use WordPress's native proven mail function
+    require_once __DIR__ . '/wp-load.php';
+    $wpHeaders = [
+        'Content-Type: text/html; charset=UTF-8',
+        'From: SILWA Web Enquiries <' . $fromSender . '>',
+        'Reply-To: ' . $fullName . ' <' . $email . '>'
+    ];
+    $sent = wp_mail($toEmail, $subject, $emailBody, $wpHeaders);
+} else {
+    // Standalone Hostinger PHP mail matching Hostinger's SPF record
+    $headers = [];
+    $headers[] = 'MIME-Version: 1.0';
+    $headers[] = 'Content-type: text/html; charset=UTF-8';
+    $headers[] = 'From: SILWA Web Enquiries <' . $fromSender . '>';
+    $headers[] = 'Reply-To: ' . $fullName . ' <' . $email . '>';
+    $headers[] = 'Date: ' . date('r');
+    $headers[] = 'Message-ID: <' . md5(uniqid(time())) . '@summerinspectlog.com>';
+    $headers[] = 'X-Mailer: WordPress/Hostinger';
+
+    $sent = @mail($toEmail, $subject, $emailBody, implode("\r\n", $headers), "-f " . $fromSender);
+}
 
 if ($sent) {
     // Send auto-acknowledgement email to the client
@@ -179,16 +193,25 @@ if ($sent) {
     </html>
     ";
     
-    $autoHeaders = [];
-    $autoHeaders[] = 'MIME-Version: 1.0';
-    $autoHeaders[] = 'Content-type: text/html; charset=UTF-8';
-    $autoHeaders[] = 'From: Summer Inspection & Logistique <biz@summerinspectlog.com>';
-    $autoHeaders[] = 'Reply-To: biz@summerinspectlog.com';
-    $autoHeaders[] = 'Date: ' . date('r');
-    $autoHeaders[] = 'Message-ID: <' . md5(uniqid('auto' . time())) . '@summerinspectlog.com>';
-    $autoHeaders[] = 'X-Mailer: PHP/' . phpversion();
+    if (function_exists('wp_mail')) {
+        $autoWpHeaders = [
+            'Content-Type: text/html; charset=UTF-8',
+            'From: Summer Inspection & Logistique <' . $fromSender . '>',
+            'Reply-To: biz@summerinspectlog.com'
+        ];
+        @wp_mail($email, $autoSubject, $autoBody, $autoWpHeaders);
+    } else {
+        $autoHeaders = [];
+        $autoHeaders[] = 'MIME-Version: 1.0';
+        $autoHeaders[] = 'Content-type: text/html; charset=UTF-8';
+        $autoHeaders[] = 'From: Summer Inspection & Logistique <' . $fromSender . '>';
+        $autoHeaders[] = 'Reply-To: biz@summerinspectlog.com';
+        $autoHeaders[] = 'Date: ' . date('r');
+        $headers[] = 'Message-ID: <' . md5(uniqid('auto' . time())) . '@summerinspectlog.com>';
+        $autoHeaders[] = 'X-Mailer: WordPress/Hostinger';
 
-    @mail($email, $autoSubject, $autoBody, implode("\r\n", $autoHeaders), "-f biz@summerinspectlog.com");
+        @mail($email, $autoSubject, $autoBody, implode("\r\n", $autoHeaders), "-f " . $fromSender);
+    }
 
     echo json_encode([
         'status' => 'success',
