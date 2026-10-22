@@ -134,9 +134,11 @@ $emailBody = "
 $sent = false;
 $fromSender = 'wordpress@summerinspectlog.com';
 
-if (file_exists(__DIR__ . '/wp-load.php')) {
-    // If WordPress is present on the server, use WordPress's native proven mail function
-    require_once __DIR__ . '/wp-load.php';
+$wpPath = file_exists(__DIR__ . '/wp-load.php') ? __DIR__ . '/wp-load.php' : (file_exists(__DIR__ . '/wp_backup/wp-load.php') ? __DIR__ . '/wp_backup/wp-load.php' : null);
+
+if ($wpPath) {
+    // If WordPress is present (either in root or wp_backup), use proven wp_mail()
+    require_once $wpPath;
     $wpHeaders = [
         'Content-Type: text/html; charset=UTF-8',
         'From: SILWA Web Enquiries <' . $fromSender . '>',

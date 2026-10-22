@@ -4,6 +4,9 @@
 # Optimized for Google Core Web Vitals, Speed & Security
 # ==============================================================================
 
+# 0. Serve index.html as the primary landing page
+DirectoryIndex index.html index.php
+
 # 1. Force HTTPS
 <IfModule mod_rewrite.c>
   RewriteEngine On
