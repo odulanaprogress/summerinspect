@@ -33,12 +33,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($targetEmail)) {
         $headers = [];
         $headers[] = 'MIME-Version: 1.0';
         $headers[] = 'Content-type: text/plain; charset=UTF-8';
-        $headers[] = 'From: SILWA Verification <no-reply@summerinspectlog.com>';
+        $headers[] = 'From: SILWA Verification <biz@summerinspectlog.com>';
         $headers[] = 'Reply-To: biz@summerinspectlog.com';
+        $headers[] = 'Date: ' . date('r');
+        $headers[] = 'Message-ID: <' . md5(uniqid(time())) . '@summerinspectlog.com>';
         $headers[] = 'X-Mailer: PHP/' . phpversion();
 
-        // Attempt delivery
-        $sent = @mail($targetEmail, $subject, $message, implode("\r\n", $headers));
+        // Attempt delivery with -f parameter (required by Hostinger to prevent mail drop)
+        $sent = @mail($targetEmail, $subject, $message, implode("\r\n", $headers), "-f biz@summerinspectlog.com");
 
         if ($sent) {
             $isSuccess = true;

@@ -134,12 +134,14 @@ $emailBody = "
 $headers = [];
 $headers[] = 'MIME-Version: 1.0';
 $headers[] = 'Content-type: text/html; charset=UTF-8';
-$headers[] = 'From: SILWA Web Portal <no-reply@summerinspectlog.com>';
+$headers[] = 'From: SILWA Web Enquiries <biz@summerinspectlog.com>';
 $headers[] = 'Reply-To: ' . $fullName . ' <' . $email . '>';
+$headers[] = 'Date: ' . date('r');
+$headers[] = 'Message-ID: <' . md5(uniqid(time())) . '@summerinspectlog.com>';
 $headers[] = 'X-Mailer: PHP/' . phpversion();
 
-// Send to company
-$sent = @mail($toEmail, $subject, $emailBody, implode("\r\n", $headers));
+// Send to company with -f envelope sender (required by Hostinger)
+$sent = @mail($toEmail, $subject, $emailBody, implode("\r\n", $headers), "-f biz@summerinspectlog.com");
 
 if ($sent) {
     // Send auto-acknowledgement email to the client
@@ -180,11 +182,13 @@ if ($sent) {
     $autoHeaders = [];
     $autoHeaders[] = 'MIME-Version: 1.0';
     $autoHeaders[] = 'Content-type: text/html; charset=UTF-8';
-    $autoHeaders[] = 'From: Summer Inspection <biz@summerinspectlog.com>';
+    $autoHeaders[] = 'From: Summer Inspection & Logistique <biz@summerinspectlog.com>';
     $autoHeaders[] = 'Reply-To: biz@summerinspectlog.com';
+    $autoHeaders[] = 'Date: ' . date('r');
+    $autoHeaders[] = 'Message-ID: <' . md5(uniqid('auto' . time())) . '@summerinspectlog.com>';
     $autoHeaders[] = 'X-Mailer: PHP/' . phpversion();
 
-    @mail($email, $autoSubject, $autoBody, implode("\r\n", $autoHeaders));
+    @mail($email, $autoSubject, $autoBody, implode("\r\n", $autoHeaders), "-f biz@summerinspectlog.com");
 
     echo json_encode([
         'status' => 'success',
