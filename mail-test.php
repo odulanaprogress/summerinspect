@@ -9,7 +9,7 @@ ini_set('display_errors', 1);
 
 $mode = isset($_POST['mode']) ? $_POST['mode'] : 'smtp';
 $targetEmail = isset($_POST['test_email']) ? trim($_POST['test_email']) : 'biz@summerinspectlog.com';
-$smtpHost = isset($_POST['smtp_host']) ? trim($_POST['smtp_host']) : 'smtp.hostinger.com';
+$smtpHost = isset($_POST['smtp_host']) ? trim($_POST['smtp_host']) : 'smtppro.zoho.com';
 $smtpPort = isset($_POST['smtp_port']) ? intval($_POST['smtp_port']) : 465;
 $smtpUser = isset($_POST['smtp_user']) ? trim($_POST['smtp_user']) : 'biz@summerinspectlog.com';
 $smtpPass = isset($_POST['smtp_pass']) ? $_POST['smtp_pass'] : '';
@@ -203,7 +203,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <div class="card">
     <div class="header">
       <h1>Summer Inspection &amp; Logistique W/A LTD</h1>
-      <p>Hostinger Authenticated SMTP Live Diagnostic Tool</p>
+      <p>Zoho Mail Authenticated SMTP Live Diagnostic Tool</p>
     </div>
     <div class="content">
       <?php if (!empty($resultMessage)): ?>
@@ -216,13 +216,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <input type="hidden" name="mode" value="smtp">
 
         <div class="form-group">
-          <label>Hostinger Mailbox (Sender &amp; Login):</label>
+          <label>Zoho Mailbox (Sender &amp; Username):</label>
           <input type="email" name="smtp_user" value="<?php echo htmlspecialchars($smtpUser); ?>" required>
         </div>
 
         <div class="form-group">
-          <label>Hostinger Mailbox Password (for <?php echo htmlspecialchars($smtpUser); ?>):</label>
-          <input type="password" name="smtp_pass" placeholder="Enter password you set in Hostinger Emails" required autofocus>
+          <label>Zoho Mailbox Password (or Zoho App Password):</label>
+          <input type="password" name="smtp_pass" placeholder="Enter Zoho account password or App Password" required autofocus>
         </div>
 
         <div class="grid-2">
@@ -241,18 +241,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           <input type="email" name="test_email" value="<?php echo htmlspecialchars($targetEmail); ?>" required placeholder="biz@summerinspectlog.com or personal Gmail">
         </div>
 
-        <button type="submit">🚀 Connect &amp; Send via Hostinger SMTP</button>
+        <button type="submit">🚀 Connect &amp; Send via Zoho SMTP</button>
       </form>
 
       <?php if (!empty($debugLog)): ?>
         <div style="margin-top: 25px;">
-          <label style="font-weight: 600; font-size: 13px; color: #cbd5e1;">Live Hostinger Server Handshake Log:</label>
+          <label style="font-weight: 600; font-size: 13px; color: #cbd5e1;">Live Zoho Server Handshake Log:</label>
           <div class="log-box"><?php echo htmlspecialchars(implode("\n", $debugLog)); ?></div>
         </div>
       <?php endif; ?>
 
       <div class="note">
-        💡 <strong>Why SMTP?</strong> Hostinger's servers require SMTP authentication to prove that outgoing emails are genuine and not spoofed. Once verified here, emails arrive in your inbox in under 3 seconds with full SPF/DKIM validation.
+        💡 <strong>Why Zoho SMTP?</strong> Your domain's MX records point directly to <code>mx.zoho.com</code>. Zoho Mail requires outgoing emails claiming to be from <code>@summerinspectlog.com</code> to authenticate via Zoho's secure SMTP server (<code>smtppro.zoho.com</code>).
       </div>
     </div>
   </div>
