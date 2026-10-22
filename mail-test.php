@@ -1,56 +1,174 @@
 <?php
 /**
  * Summer Inspection & Logistique W/A LTD
- * Diagnostic Mail Delivery Tester
- * 
- * Usage:
- * 1. Upload this file to your public_html folder.
- * 2. Visit https://summerinspectlog.com/mail-test.php in your browser.
- * 3. Enter your test email address and click "Send Test Email".
- * 4. Check both your Inbox and Spam/Junk folder.
- * 5. (Important) Delete this file after testing for security.
+ * Mail Delivery & SMTP Diagnostic Tool
  */
 
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
+$mode = isset($_POST['mode']) ? $_POST['mode'] : 'smtp';
 $targetEmail = isset($_POST['test_email']) ? trim($_POST['test_email']) : 'biz@summerinspectlog.com';
+$smtpHost = isset($_POST['smtp_host']) ? trim($_POST['smtp_host']) : 'smtp.hostinger.com';
+$smtpPort = isset($_POST['smtp_port']) ? intval($_POST['smtp_port']) : 465;
+$smtpUser = isset($_POST['smtp_user']) ? trim($_POST['smtp_user']) : 'biz@summerinspectlog.com';
+$smtpPass = isset($_POST['smtp_pass']) ? $_POST['smtp_pass'] : '';
+
 $resultMessage = '';
 $isSuccess = null;
+$debugLog = [];
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($targetEmail)) {
+/**
+ * Pure PHP SMTP Client (No Composer / No External Dependencies Required)
+ */
+function sendViaSMTP($host, $port, $user, $pass, $from, $to, $subject, $bodyText, &$debugLog) {
+    $debugLog[] = "Connecting to {$host}:{$port} ...";
+    
+    $timeout = 15;
+    $context = stream_context_create([
+        'ssl' => [
+            'verify_peer' => false,
+            'verify_peer_name' => false,
+            'allow_self_signed' => true
+        ]
+    ]);
+    
+    $protocol = ($port == 465) ? 'ssl://' : '';
+    $socket = @stream_socket_client($protocol . $host . ':' . $port, $errno, $errstr, $timeout, STREAM_CLIENT_CONNECT, $context);
+    
+    if (!$socket) {
+        $debugLog[] = "ERROR: Failed to connect: {$errstr} ({$errno})";
+        return false;
+    }
+    
+    $readResponse = function() use ($socket, &$debugLog) {
+        $response = '';
+        while ($line = fgets($socket, 515)) {
+            $response .= $line;
+            if (substr($line, 3, 1) == ' ') break;
+        }
+        $debugLog[] = "S: " . trim($response);
+        return $response;
+    };
+    
+    $sendCommand = function($cmd, $mask = false) use ($socket, &$debugLog) {
+        $debugLog[] = "C: " . ($mask ? "******" : $cmd);
+        fputs($socket, $cmd . "\r\n");
+    };
+    
+    // 1. Initial greeting
+    $greeting = $readResponse();
+    if (substr($greeting, 0, 3) != '220') return false;
+    
+    // 2. EHLO
+    $hostname = !empty($_SERVER['SERVER_NAME']) ? $_SERVER['SERVER_NAME'] : 'summerinspectlog.com';
+    $sendCommand("EHLO " . $hostname);
+    $readResponse();
+    
+    // 3. STARTTLS if port 587
+    if ($port == 587) {
+        $sendCommand("STARTTLS");
+        $res = $readResponse();
+        if (substr($res, 0, 3) != '220') return false;
+        stream_socket_enable_crypto($socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT);
+        $sendCommand("EHLO " . $hostname);
+        $readResponse();
+    }
+    
+    // 4. AUTH LOGIN
+    $sendCommand("AUTH LOGIN");
+    $res = $readResponse();
+    if (substr($res, 0, 3) != '334') return false;
+    
+    $sendCommand(base64_encode($user));
+    $res = $readResponse();
+    if (substr($res, 0, 3) != '334') return false;
+    
+    $sendCommand(base64_encode($pass), true);
+    $res = $readResponse();
+    if (substr($res, 0, 3) != '235') {
+        $debugLog[] = "ERROR: Authentication failed! Please double-check the mailbox password.";
+        return false;
+    }
+    
+    // 5. MAIL FROM
+    $sendCommand("MAIL FROM: <{$from}>");
+    $res = $readResponse();
+    if (substr($res, 0, 3) != '250') return false;
+    
+    // 6. RCPT TO
+    $sendCommand("RCPT TO: <{$to}>");
+    $res = $readResponse();
+    if (substr($res, 0, 3) != '250') return false;
+    
+    // 7. DATA
+    $sendCommand("DATA");
+    $res = $readResponse();
+    if (substr($res, 0, 3) != '354') return false;
+    
+    // 8. Headers & Body
+    $headers = [];
+    $headers[] = "From: Summer Inspection & Logistique <{$from}>";
+    $headers[] = "To: <{$to}>";
+    $headers[] = "Subject: {$subject}";
+    $headers[] = "Date: " . date('r');
+    $headers[] = "Message-ID: <" . md5(uniqid(time())) . "@summerinspectlog.com>";
+    $headers[] = "MIME-Version: 1.0";
+    $headers[] = "Content-Type: text/plain; charset=UTF-8";
+    
+    $payload = implode("\r\n", $headers) . "\r\n\r\n" . $bodyText . "\r\n.\r\n";
+    fputs($socket, $payload);
+    $debugLog[] = "C: [Sent Headers and Message Body]";
+    
+    $res = $readResponse();
+    $sendCommand("QUIT");
+    fclose($socket);
+    
+    return (substr($res, 0, 3) == '250');
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!filter_var($targetEmail, FILTER_VALIDATE_EMAIL)) {
         $resultMessage = "Invalid email format: " . htmlspecialchars($targetEmail);
         $isSuccess = false;
+    } elseif ($mode === 'smtp') {
+        if (empty($smtpPass)) {
+            $resultMessage = "Please enter your Hostinger email password for <strong>" . htmlspecialchars($smtpUser) . "</strong>.";
+            $isSuccess = false;
+        } else {
+            $subject = "Hostinger SMTP Test Delivery - " . date('Y-m-d H:i:s');
+            $body = "Hello,\r\n\r\nThis is a SUCCESSFUL authenticated SMTP test from Summer Inspection & Logistique W/A LTD.\r\n\r\n" .
+                    "Hostinger SMTP server accepted and verified this transmission.\r\n" .
+                    "Timestamp: " . date('r') . "\r\n" .
+                    "Sent via: smtp.hostinger.com (Port {$smtpPort})\r\n";
+            
+            $sent = sendViaSMTP($smtpHost, $smtpPort, $smtpUser, $smtpPass, $smtpUser, $targetEmail, $subject, $body, $debugLog);
+            if ($sent) {
+                $isSuccess = true;
+                $resultMessage = "🎉 <strong>SUCCESS! Authenticated via Hostinger SMTP.</strong><br><br>" .
+                                 "Hostinger's official mail server verified your credentials and accepted the email for immediate delivery to <strong>" . htmlspecialchars($targetEmail) . "</strong>.<br>" .
+                                 "Check your inbox right now!";
+            } else {
+                $isSuccess = false;
+                $resultMessage = "❌ <strong>SMTP Authentication Failed.</strong><br>Check the server conversation log below to see what Hostinger returned (most often wrong password).";
+            }
+        }
     } else {
-        $subject = "SILWA Mail Delivery Test - " . date('Y-m-d H:i:s');
-        $message = "Hello,\r\n\r\nThis is a verification test from Summer Inspection & Logistique W/A LTD.\r\n" .
-                   "If you received this email, PHP mail delivery is WORKING properly on your server.\r\n\r\n" .
-                   "Server: " . ($_SERVER['SERVER_NAME'] ?? 'localhost') . "\r\n" .
-                   "Timestamp: " . date('r') . "\r\n" .
-                   "Sender: no-reply@summerinspectlog.com\r\n";
-
-        $headers = [];
-        $headers[] = 'MIME-Version: 1.0';
-        $headers[] = 'Content-type: text/plain; charset=UTF-8';
-        $headers[] = 'From: SILWA Verification <biz@summerinspectlog.com>';
-        $headers[] = 'Reply-To: biz@summerinspectlog.com';
-        $headers[] = 'Date: ' . date('r');
-        $headers[] = 'Message-ID: <' . md5(uniqid(time())) . '@summerinspectlog.com>';
-        $headers[] = 'X-Mailer: PHP/' . phpversion();
-
-        // Attempt delivery with -f parameter (required by Hostinger to prevent mail drop)
-        $sent = @mail($targetEmail, $subject, $message, implode("\r\n", $headers), "-f biz@summerinspectlog.com");
-
+        // Fallback PHP mail()
+        $subject = "PHP mail() Diagnostic Test - " . date('Y-m-d H:i:s');
+        $message = "Test message from PHP mail().";
+        $headers = "From: Summer Inspection <biz@summerinspectlog.com>\r\n" .
+                   "Reply-To: biz@summerinspectlog.com\r\n" .
+                   "Date: " . date('r') . "\r\n" .
+                   "X-Mailer: PHP/" . phpversion();
+        
+        $sent = @mail($targetEmail, $subject, $message, $headers, "-f biz@summerinspectlog.com");
         if ($sent) {
             $isSuccess = true;
-            $resultMessage = "Email successfully dispatched to: <strong>" . htmlspecialchars($targetEmail) . "</strong>!<br><br>" .
-                             "Please check both your <strong>Inbox</strong> and <strong>Spam / Junk folder</strong> in the next 1-3 minutes.";
+            $resultMessage = "Local PHP mail() sent message to local queue. However, if this email never appears in your inbox, Hostinger is blocking unauthenticated PHP mail() at server level.";
         } else {
             $isSuccess = false;
-            $lastError = error_get_last();
-            $resultMessage = "PHP mail() returned FALSE. Server could not send the message.<br>" .
-                             "Error details: " . ($lastError ? htmlspecialchars($lastError['message']) : 'No specific error returned by PHP.');
+            $resultMessage = "PHP mail() returned FALSE. Server completely disabled mail().";
         }
     }
 }
@@ -59,32 +177,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($targetEmail)) {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>SILWA - Email Delivery Test Tool</title>
+  <title>SILWA - Email & SMTP Tester</title>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #f1f5f9; color: #1e293b; padding: 40px 20px; margin: 0; }
-    .card { max-width: 580px; margin: 0 auto; background: #ffffff; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); overflow: hidden; border: 1px solid #e2e8f0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #0b1528; color: #e2e8f0; padding: 40px 20px; margin: 0; }
+    .card { max-width: 650px; margin: 0 auto; background: #132238; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); overflow: hidden; border: 1px solid #1e3352; }
     .header { background: #0c3ba1; color: white; padding: 24px 30px; }
     .header h1 { margin: 0; font-size: 20px; font-weight: 700; }
     .header p { margin: 6px 0 0 0; font-size: 13px; opacity: 0.9; }
     .content { padding: 30px; }
     .alert { padding: 14px 18px; border-radius: 8px; margin-bottom: 24px; font-size: 14px; line-height: 1.5; }
-    .alert-success { background: #dcfce7; border: 1px solid #86efac; color: #166534; }
-    .alert-error { background: #fee2e2; border: 1px solid #fca5a5; color: #991b1b; }
+    .alert-success { background: #064e3b; border: 1px solid #059669; color: #a7f3d0; }
+    .alert-error { background: #4c1d24; border: 1px solid #e11d48; color: #fecdd3; }
     .form-group { margin-bottom: 18px; }
-    label { display: block; font-weight: 600; font-size: 13px; margin-bottom: 6px; color: #334155; }
-    input[type="email"] { width: 100%; box-sizing: border-box; padding: 12px 14px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 15px; }
-    input[type="email"]:focus { outline: none; border-color: #0c3ba1; box-shadow: 0 0 0 3px rgba(12, 59, 161, 0.15); }
-    button { background: #0c3ba1; color: white; border: none; padding: 12px 24px; font-size: 15px; font-weight: 600; border-radius: 6px; cursor: pointer; width: 100%; transition: background 0.2s; }
-    button:hover { background: #092c7d; }
-    .server-info { margin-top: 25px; padding-top: 20px; border-top: 1px solid #f1f5f9; font-size: 12px; color: #64748b; line-height: 1.6; }
-    .warning { margin-top: 20px; font-size: 12px; color: #d97706; background: #fffbeb; padding: 10px 14px; border-radius: 6px; border: 1px solid #fde68a; }
+    label { display: block; font-weight: 600; font-size: 13px; margin-bottom: 6px; color: #94a3b8; }
+    input[type="text"], input[type="email"], input[type="password"] { width: 100%; box-sizing: border-box; padding: 12px 14px; background: #0a1424; border: 1px solid #243b5e; border-radius: 6px; font-size: 14px; color: white; }
+    input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2); }
+    .grid-2 { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; }
+    button { background: #2563eb; color: white; border: none; padding: 13px 24px; font-size: 15px; font-weight: 600; border-radius: 6px; cursor: pointer; width: 100%; transition: background 0.2s; margin-top: 10px; }
+    button:hover { background: #1d4ed8; }
+    .log-box { margin-top: 25px; background: #050b14; border: 1px solid #1e293b; border-radius: 8px; padding: 15px; font-family: 'Courier New', monospace; font-size: 12px; color: #38bdf8; max-height: 250px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
+    .note { margin-top: 20px; font-size: 12px; color: #94a3b8; line-height: 1.6; background: #0a1424; padding: 12px 16px; border-radius: 6px; border-left: 3px solid #3b82f6; }
   </style>
 </head>
 <body>
   <div class="card">
     <div class="header">
-      <h1>Summer Inspection &amp; Logistique</h1>
-      <p>Server Email Delivery Diagnostic Tool</p>
+      <h1>Summer Inspection &amp; Logistique W/A LTD</h1>
+      <p>Hostinger Authenticated SMTP Live Diagnostic Tool</p>
     </div>
     <div class="content">
       <?php if (!empty($resultMessage)): ?>
@@ -94,22 +213,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($targetEmail)) {
       <?php endif; ?>
 
       <form method="POST" action="">
+        <input type="hidden" name="mode" value="smtp">
+
         <div class="form-group">
-          <label for="test_email">Recipient Email Address to Test:</label>
-          <input type="email" id="test_email" name="test_email" value="<?php echo htmlspecialchars($targetEmail); ?>" required placeholder="e.g. biz@summerinspectlog.com or your personal email">
+          <label>Hostinger Mailbox (Sender &amp; Login):</label>
+          <input type="email" name="smtp_user" value="<?php echo htmlspecialchars($smtpUser); ?>" required>
         </div>
-        <button type="submit">Send Test Email Now</button>
+
+        <div class="form-group">
+          <label>Hostinger Mailbox Password (for <?php echo htmlspecialchars($smtpUser); ?>):</label>
+          <input type="password" name="smtp_pass" placeholder="Enter password you set in Hostinger Emails" required autofocus>
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group">
+            <label>SMTP Host:</label>
+            <input type="text" name="smtp_host" value="<?php echo htmlspecialchars($smtpHost); ?>" required>
+          </div>
+          <div class="form-group">
+            <label>Port:</label>
+            <input type="text" name="smtp_port" value="<?php echo htmlspecialchars($smtpPort); ?>" required>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Send Test Email To (Recipient):</label>
+          <input type="email" name="test_email" value="<?php echo htmlspecialchars($targetEmail); ?>" required placeholder="biz@summerinspectlog.com or personal Gmail">
+        </div>
+
+        <button type="submit">🚀 Connect &amp; Send via Hostinger SMTP</button>
       </form>
 
-      <div class="server-info">
-        <strong>Server Telemetry:</strong><br>
-        PHP Version: <?php echo phpversion(); ?><br>
-        mail() function enabled: <?php echo function_exists('mail') ? 'YES' : 'NO'; ?><br>
-        Server Software: <?php echo htmlspecialchars($_SERVER['SERVER_SOFTWARE'] ?? 'Unknown'); ?><br>
-      </div>
+      <?php if (!empty($debugLog)): ?>
+        <div style="margin-top: 25px;">
+          <label style="font-weight: 600; font-size: 13px; color: #cbd5e1;">Live Hostinger Server Handshake Log:</label>
+          <div class="log-box"><?php echo htmlspecialchars(implode("\n", $debugLog)); ?></div>
+        </div>
+      <?php endif; ?>
 
-      <div class="warning">
-        <strong>Security Notice:</strong> Delete or rename <code>mail-test.php</code> after completing your test so unauthorized visitors cannot trigger test emails.
+      <div class="note">
+        💡 <strong>Why SMTP?</strong> Hostinger's servers require SMTP authentication to prove that outgoing emails are genuine and not spoofed. Once verified here, emails arrive in your inbox in under 3 seconds with full SPF/DKIM validation.
       </div>
     </div>
   </div>
